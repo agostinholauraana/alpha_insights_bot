@@ -9,23 +9,6 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import requests
 
-import streamlit as st
-from google_service import sheets_service
-
-# Exemplo: listar planilhas do Google Drive
-from googleapiclient.discovery import build
-
-drive_service = build('drive', 'v3', credentials=sheets_service._http.credentials)
-result = drive_service.files().list(
-    q="mimeType='application/vnd.google-apps.spreadsheet'",
-    pageSize=5,
-    fields="files(id, name)"
-).execute()
-
-st.write("Planilhas encontradas:")
-for f in result.get('files', []):
-    st.write(f"{f['name']} ({f['id']})")
-
 # Importa serviço do Google Sheets
 from google_service import (
     list_spreadsheets,
@@ -908,4 +891,5 @@ st.markdown("""
         </div>
     </div>
 """, unsafe_allow_html=True)
+
 
