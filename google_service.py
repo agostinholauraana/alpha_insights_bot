@@ -10,6 +10,11 @@ from typing import List, Dict, Any, Optional
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from google_service_utils import normalize_service_account_json
+from logging_config import setup_logging
+
+# garante que logging file handler esteja ativo
+setup_logging()
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO)
@@ -46,7 +51,7 @@ class GoogleSheetsService:
 
             if json_env:
                 try:
-                    info = json.loads(json_env)
+                    info = normalize_service_account_json(json_env)
                     creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
                     logger.info("🔐 Credenciais carregadas de GOOGLE_SERVICE_ACCOUNT_JSON")
                 except Exception as e:

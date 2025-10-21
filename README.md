@@ -74,3 +74,51 @@ GOOGLE_SERVICE_ACCOUNT_JSON = "{\"type\":\"service_account\", ... }"
 - Arquivos Excel/CSV aparecem na listagem, mas a leitura direta é feita para Planilhas Google. Para converter, compartilhe e use a função de conversão no Drive (ou adapte a função `convert_excel_to_google_sheet`, exigirá escopos de escrita).
 - Certifique-se de compartilhar os arquivos com a Service Account.
 - A UI já está em “wide mode” e com tema configurado em `.streamlit/config.toml`.
+
+## Exemplos recomendados para `secrets.toml` (Streamlit Cloud)
+
+1) Objetos JSON (recomendado — mais seguro e direto):
+
+```toml
+[secrets]
+GOOGLE_SERVICE_ACCOUNT_JSON = { 
+	type = "service_account",
+	project_id = "meu-projeto",
+	private_key = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+	client_email = "sa@meu-projeto.iam.gserviceaccount.com"
+}
+```
+
+2) String JSON (use apenas se não puder armazenar como objeto):
+
+```toml
+[secrets]
+GOOGLE_SERVICE_ACCOUNT_JSON = "{ \"type\": \"service_account\", \"project_id\": \"meu-projeto\", ... }"
+```
+
+3) Base64-encoded JSON (último recurso):
+
+```toml
+[secrets]
+# Gere com: base64.b64encode(json.dumps(obj).encode()).decode()
+GOOGLE_SERVICE_ACCOUNT_JSON = "eyAidHlwZSI6ICJzZXJ2aWNlX2FjY291bnQiLCAi..."
+```
+
+## Diagnóstico de credenciais
+
+O app exibe um diagnóstico na sidebar que valida o `GOOGLE_SERVICE_ACCOUNT_JSON` sem mostrar a `private_key` em claro. Se houver problemas, a seção oferece dicas (ex.: "parece base64 truncado") e passos para corrigir.
+
+## Logs
+
+Você pode controlar o arquivo e o nível de logs via variáveis de ambiente:
+
+- `LOG_FILE` (opcional) — caminho para o arquivo de log. Default: `logs/alpha_insights.log`
+- `LOG_LEVEL` (opcional) — nível de log (DEBUG, INFO, WARNING, ERROR). Default: `INFO`
+
+Exemplo (exportando antes de rodar):
+
+```bash
+export LOG_FILE=/tmp/alpha_insights.log
+export LOG_LEVEL=DEBUG
+streamlit run app.py
+```
