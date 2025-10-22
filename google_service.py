@@ -21,8 +21,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Escopos necessários para Drive e Sheets
+# Observação: usamos o escopo completo do Drive para permitir a cópia/conversão
+# de arquivos Excel/CSV em Planilhas Google quando necessário.
 SCOPES = [
-    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/drive',
     'https://www.googleapis.com/auth/spreadsheets.readonly'
 ]
 
@@ -75,8 +77,9 @@ class GoogleSheetsService:
             self.credentials = creds
             
             # Constrói os clientes da API
-            self.drive_service = build('drive', 'v3', credentials=self.credentials)
-            self.sheets_service = build('sheets', 'v4', credentials=self.credentials)
+            # cache_discovery=False evita problemas de cache/gravacao no Streamlit Cloud
+            self.drive_service = build('drive', 'v3', credentials=self.credentials, cache_discovery=False)
+            self.sheets_service = build('sheets', 'v4', credentials=self.credentials, cache_discovery=False)
             
             logger.info("✅ Google Sheets Service inicializado com sucesso")
             

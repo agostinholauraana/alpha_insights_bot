@@ -13,7 +13,8 @@ setup_logging()
 from google_service import (
     list_spreadsheets,
     get_form_responses,
-    convert_excel_to_google_sheet
+    convert_excel_to_google_sheet,
+    auto_convert_tabular_files,
 )
 
 # --------- Carregar variáveis de ambiente ---------
@@ -71,6 +72,10 @@ DEFAULT_TEMPERATURE = float(secret_get("GEMINI_TEMPERATURE", "0.7"))
 ABACUS_API_KEY = secret_get("ABACUS_API_KEY")
 ABACUS_MODEL = secret_get("ABACUS_MODEL", "gemini-2.0-flash-exp")
 ABACUS_URL = "https://routellm.abacus.ai/v1/chat/completions"
+
+# Drive: pasta alvo (opcional) e auto conversão
+DRIVE_FOLDER_ID = secret_get("GOOGLE_DRIVE_FOLDER_ID")
+AUTO_CONVERT = (secret_get("GOOGLE_AUTO_CONVERT_TABULAR", "true") or "true").strip().lower() == "true"
 
 # --------- Configuração da página ---------
 st.set_page_config(
@@ -146,7 +151,14 @@ def get_google_sheets_context() -> str:
         return st.session_state.google_sheets_cache
     
     try:
-        sheets = list_spreadsheets(include_excel=True)
+        # opcionalmente converte arquivos tabulares antes de listar
+        if AUTO_CONVERT:
+            try:
+                auto_convert_tabular_files(parent_folder_id=DRIVE_FOLDER_ID, include_csv=True, include_xls=True, max_conversions=20)
+            except Exception as ce:
+                st.warning(f"Conversão automática desabilitada: {ce}")
+
+        sheets = list_spreadsheets(include_excel=True, folder_id=DRIVE_FOLDER_ID)
         if not sheets:
             return ""
         
@@ -169,7 +181,7 @@ def process_special_commands(prompt: str) -> tuple[bool, str]:
     
     if any(word in prompt_lower for word in ["liste os planilhas", "listar planilhas", "mostrar planilhas", "planilhas disponíveis"]):
         try:
-            sheets = list_spreadsheets(include_excel=True)
+            sheets = list_spreadsheets(include_excel=True, folder_id=DRIVE_FOLDER_ID)
             if not sheets:
                 return True, "Nenhuma planilha encontrada no Google Drive."
             
@@ -190,7 +202,7 @@ def process_special_commands(prompt: str) -> tuple[bool, str]:
     
     if "respostas do planilha" in prompt_lower or "respostas da planilha" in prompt_lower:
         try:
-            sheets = list_spreadsheets(include_excel=True)
+            sheets = list_spreadsheets(include_excel=True, folder_id=DRIVE_FOLDER_ID)
             if not sheets:
                 return True, "Nenhuma planilha encontrada no Google Drive."
             
@@ -202,7 +214,7 @@ def process_special_commands(prompt: str) -> tuple[bool, str]:
             
             if mime and mime != 'application/vnd.google-apps.spreadsheet':
                 try:
-                    converted = convert_excel_to_google_sheet(sheet_id, new_title=f"{sheet_name} (convertido)")
+                    converted = convert_excel_to_google_sheet(sheet_id, new_title=f"{sheet_name} (convertido)", parent_folder_id=DRIVE_FOLDER_ID)
                     sheet_id = converted['id']
                     sheet_name = converted.get('name', sheet_name)
                 except Exception as ce:

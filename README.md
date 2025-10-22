@@ -45,8 +45,8 @@ O app procura credenciais nesta ordem:
 2. `GOOGLE_SERVICE_ACCOUNT_FILE` (caminho para um arquivo .json)
 3. `./keys/<arquivo>.json` (fallback local)
 
-Escopos usados (apenas leitura):
-- Drive Readonly: `https://www.googleapis.com/auth/drive.readonly`
+Escopos usados:
+- Drive: `https://www.googleapis.com/auth/drive` (necessário para copiar/convertar arquivos .xlsx/.csv para Planilhas Google quando preciso)
 - Sheets Readonly: `https://www.googleapis.com/auth/spreadsheets.readonly`
 
 Compartilhe as planilhas/arquivos com o email da Service Account (veja no app ou no JSON: `client_email`).
@@ -62,6 +62,9 @@ GEMINI_TEMPERATURE = "0.3"
 ABACUS_API_KEY = "xxxxx" # opcional
 ABACUS_MODEL = "gemini-2.5-pro"
 GOOGLE_SERVICE_ACCOUNT_JSON = "{\"type\":\"service_account\", ... }"
+# Opcional: limite a pasta e habilite conversão automática de XLSX/CSV
+GOOGLE_DRIVE_FOLDER_ID = "1tGf_-Tl2tne-lI7GOGtEvrp-YRYIBzFP" # exemplo
+GOOGLE_AUTO_CONVERT_TABULAR = "true" # true/false
 ```
 4. Salve e implante. O app inicia automaticamente.
 
@@ -71,7 +74,7 @@ GOOGLE_SERVICE_ACCOUNT_JSON = "{\"type\":\"service_account\", ... }"
 - Comando de start: `streamlit run app.py --server.port=$PORT --server.address=0.0.0.0`
 
 ## Observações
-- Arquivos Excel/CSV aparecem na listagem, mas a leitura direta é feita para Planilhas Google. Para converter, compartilhe e use a função de conversão no Drive (ou adapte a função `convert_excel_to_google_sheet`, exigirá escopos de escrita).
+- Arquivos Excel/CSV aparecem na listagem; o app pode converter automaticamente para Planilhas Google quando `GOOGLE_AUTO_CONVERT_TABULAR=true` (padrão) e a conta tem permissão na pasta. A conversão cria uma cópia como Planilha Google na mesma pasta.
 - Certifique-se de compartilhar os arquivos com a Service Account.
 - A UI já está em “wide mode” e com tema configurado em `.streamlit/config.toml`.
 
