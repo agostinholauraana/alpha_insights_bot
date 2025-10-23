@@ -75,9 +75,7 @@ class GoogleSheetsService:
                 logger.info(f"🔐 Credenciais carregadas do arquivo local: {credentials_path}")
 
             self.credentials = creds
-            
-            # Constrói os clientes da API
-            # cache_discovery=False evita problemas de cache/gravacao no Streamlit Cloud
+            # Constrói os clientes da API; desabilita cache de discovery para ambientes sem FS persistente (Streamlit Cloud)
             self.drive_service = build('drive', 'v3', credentials=self.credentials, cache_discovery=False)
             self.sheets_service = build('sheets', 'v4', credentials=self.credentials, cache_discovery=False)
             
@@ -405,6 +403,40 @@ class GoogleSheetsService:
         except Exception as e:
             logger.error(f"❌ Erro inesperado ao converter arquivo: {e}")
             raise
+
+# ----------------- Wrappers de módulo para compatibilidade com app.py -----------------
+_SERVICE_SINGLETON: Optional[GoogleSheetsService] = None
+
+def _get_service() -> GoogleSheetsService:
+    global _SERVICE_SINGLETON
+    if _SERVICE_SINGLETON is None:
+        _SERVICE_SINGLETON = GoogleSheetsService()
+    return _SERVICE_SINGLETON
+
+def list_spreadsheets(max_results: int = 100, folder_id: Optional[str] = None, include_excel: bool = False):
+    return _get_service().list_spreadsheets(max_results=max_results, folder_id=folder_id, include_excel=include_excel)
+
+def get_form_responses(spreadsheet_id: str, sheet_name: Optional[str] = None, range_notation: str = "A:Z"):
+    return _get_service().get_form_responses(spreadsheet_id=spreadsheet_id, sheet_name=sheet_name, range_notation=range_notation)
+
+def convert_excel_to_google_sheet(file_id: str, new_title: Optional[str] = None, parent_folder_id: Optional[str] = None):
+    return _get_service().convert_excel_to_google_sheet(file_id=file_id, new_title=new_title, parent_folder_id=parent_folder_id)
+
+def auto_convert_tabular_files(parent_folder_id: Optional[str] = None, include_csv: bool = True, include_xls: bool = True, max_conversions: int = 10):
+    return _get_service().auto_convert_tabular_files(
+        parent_folder_id=parent_folder_id,
+        include_csv=include_csv,
+        include_xls=include_xls,
+        max_conversions=max_conversions,
+    )
+
+__all__ = [
+    'GoogleSheetsService',
+    'list_spreadsheets',
+    'get_form_responses',
+    'convert_excel_to_google_sheet',
+    'auto_convert_tabular_files',
+]
 
 
 # Singleton global para reutilização
