@@ -519,6 +519,44 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# --------- Tema (claro/escuro) ---------
+if 'theme' not in st.session_state:
+    st.session_state.theme = 'light'
+
+# Botão único no topo direito (fora da sidebar)
+top_l, top_r = st.columns([10, 1], gap="small")
+with top_r:
+    theme_icon = "🌙" if st.session_state.theme == 'light' else "☀️"
+    if st.button(theme_icon, key="theme_toggle", help="Alternar tema"):
+        st.session_state.theme = 'dark' if st.session_state.theme == 'light' else 'light'
+        st.rerun()
+
+# Overrides de CSS para modo escuro (sem JS, usando variáveis)
+if st.session_state.theme == 'dark':
+    st.markdown(
+        """
+        <style>
+        :root {
+            --bg-gray: #111827;
+            --white: #1F2937;
+            --text-dark: #F9FAFB;
+            --text-gray: #D1D5DB;
+            --text-light: #9CA3AF;
+            --border-color: #374151;
+        }
+        .stApp { background: #0F172A; }
+        [data-testid="stSidebar"] { background: #1F2937 !important; border-right-color: #374151; }
+        .assistant-bubble { background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.25); color: #F9FAFB; }
+        .user-bubble { background: rgba(31,41,55,0.8); border-color: #374151; color: #F9FAFB; }
+        .stChatInputContainer { background: rgba(31,41,55,0.7); border-color: rgba(59,130,246,0.3); }
+        .stButton > button { background: rgba(31,41,55,0.9); border-color: #374151; color: #D1D5DB; }
+        .name-chip { background: rgba(31,41,55,0.8); border-color: #374151; color: #D1D5DB; }
+        .name-chip.alphy { background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.35); color: #93C5FD; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 # --------- Inicializar histórico ---------
 if "history" not in st.session_state:
     st.session_state.history = []
@@ -891,5 +929,3 @@ st.markdown("""
         </div>
     </div>
 """, unsafe_allow_html=True)
-
-
