@@ -46,7 +46,14 @@ class GoogleSheetsService:
 
             if json_env:
                 try:
-                    info = json.loads(json_env)
+                    # Sanitiza: extrai somente o objeto JSON entre { ... }
+                    raw = json_env.strip()
+                    if not raw.startswith('{'):
+                        start = raw.find('{')
+                        end = raw.rfind('}')
+                        if start != -1 and end != -1 and end > start:
+                            raw = raw[start:end+1]
+                    info = json.loads(raw)
                     creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
                     logger.info("🔐 Credenciais carregadas de GOOGLE_SERVICE_ACCOUNT_JSON")
                 except Exception as e:
