@@ -9,6 +9,11 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import requests
 
+import json, os, streamlit as st
+
+service_account_json = st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"]
+os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = json.dumps(json.loads(service_account_json))
+
 # --------- Carregar variáveis de ambiente ---------
 load_dotenv()
 
@@ -953,5 +958,6 @@ st.markdown("""
         </div>
     </div>
 """, unsafe_allow_html=True)
+
 
 
