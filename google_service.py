@@ -10,6 +10,13 @@ from typing import List, Dict, Any, Optional
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+import os, json
+
+credentials_info = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
+credentials = Credentials.from_service_account_info(credentials_info)
+service = build('sheets', 'v4', credentials=credentials)
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO)
@@ -463,3 +470,4 @@ def auto_convert_tabular_files(parent_folder_id: Optional[str] = None, include_c
     """Wrapper para conversão automática de CSV/XLS(X) em Google Sheets"""
     service = get_google_service()
     return service.auto_convert_tabular_files(parent_folder_id, include_csv, include_xls, max_conversions)
+
