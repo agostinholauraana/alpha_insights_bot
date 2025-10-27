@@ -9,6 +9,20 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import requests
 
+import json
+import streamlit as st
+
+# Carrega o caminho do arquivo de credenciais da conta de serviço do Streamlit Secrets
+service_account_path = st.secrets["GOOGLE_SERVICE_ACCOUNT_FILE"]
+
+# Abre e carrega o JSON da conta de serviço
+with open(service_account_path, "r", encoding="utf-8") as f:
+    service_account_info = json.load(f)
+
+# Disponibiliza como variável de ambiente para outras partes do app
+import os
+os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = json.dumps(service_account_info)
+
 # Importa serviço do Google Sheets
 from google_service import (
     list_spreadsheets,
@@ -929,3 +943,4 @@ st.markdown("""
         </div>
     </div>
 """, unsafe_allow_html=True)
+
