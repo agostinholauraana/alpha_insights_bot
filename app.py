@@ -10,9 +10,19 @@ import google.generativeai as genai
 import requests
 
 import json, os, streamlit as st
+import streamlit as st
 
 service_account_json = st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"]
 os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = json.dumps(json.loads(service_account_json))
+
+# Carrega credenciais do Streamlit Secrets
+service_account_json = st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"]
+
+# Converte para dict e coloca na variável de ambiente
+service_account_info = json.loads(service_account_json)
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = ""
+os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = json.dumps(service_account_info)
+
 
 # --------- Carregar variáveis de ambiente ---------
 load_dotenv()
@@ -958,6 +968,7 @@ st.markdown("""
         </div>
     </div>
 """, unsafe_allow_html=True)
+
 
 
 
