@@ -9,21 +9,31 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import requests
 
-import json
-import streamlit as st
+# --------- Carregar variáveis de ambiente ---------
+load_dotenv()
 
-# Carrega o caminho do arquivo de credenciais da conta de serviço do Streamlit Secrets
-service_account_path = st.secrets["GOOGLE_SERVICE_ACCOUNT_FILE"]
+# --------- Credenciais do Google Service Account ---------
+# Usando JSON direto do Streamlit Secrets
+try:
+    service_account_info = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"])
+    os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = json.dumps(service_account_info)
+except KeyError:
+    st.error("A chave 'GOOGLE_SERVICE_ACCOUNT_JSON' não foi encontrada em st.secrets.")
+    st.stop()
 
-# Abre e carrega o JSON da conta de serviço
-with open(service_account_path, "r", encoding="utf-8") as f:
-    service_account_info = json.load(f)
+# --------- Função para pegar segredos (prioriza st.secrets) ---------
+def secret_get(key: str, default: str | None = None):
+    return st.secrets.get(key, os.getenv(key, default))  # type: ignore[attr-defined]
 
-# Disponibiliza como variável de ambiente para outras partes do app
-import os
-os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = json.dumps(service_account_info)
+# --------- Chaves da API ---------
+API_KEY = secret_get("GEMINI_API_KEY") or secret_get("GOOGLE_API_KEY")
+DEFAULT_MODEL = secret_get("GEMINI_MODEL", "gemini-2.0-flash-exp")
+DEFAULT_TEMPERATURE = float(secret_get("GEMINI_TEMPERATURE", "0.7"))
+ABACUS_API_KEY = secret_get("ABACUS_API_KEY")
+ABACUS_MODEL = secret_get("ABACUS_MODEL", "gemini-2.0-flash-exp")
+GOOGLE_DRIVE_FOLDER_ID = secret_get("GOOGLE_DRIVE_FOLDER_ID", "")
 
-# Importa serviço do Google Sheets
+# --------- Importa serviço do Google Sheets ---------
 from google_service import (
     list_spreadsheets,
     get_form_responses,
@@ -943,4 +953,5 @@ st.markdown("""
         </div>
     </div>
 """, unsafe_allow_html=True)
+
 
