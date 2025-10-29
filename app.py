@@ -44,8 +44,6 @@ def secret_get(key: str, default: str | None = None):
 API_KEY = secret_get("GEMINI_API_KEY") or secret_get("GOOGLE_API_KEY")
 DEFAULT_MODEL = secret_get("GEMINI_MODEL", "gemini-2.0-flash-exp")
 DEFAULT_TEMPERATURE = float(secret_get("GEMINI_TEMPERATURE", "0.7"))
-ABACUS_API_KEY = secret_get("ABACUS_API_KEY")
-ABACUS_MODEL = secret_get("ABACUS_MODEL", "gemini-2.0-flash-exp")
 GOOGLE_DRIVE_FOLDER_ID = secret_get("GOOGLE_DRIVE_FOLDER_ID", "")
 
 # --------- Importa serviço do Google Sheets ---------
@@ -77,9 +75,6 @@ for _k in ("GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_SERVICE_ACCOUNT_FILE"):
 API_KEY = secret_get("GEMINI_API_KEY") or secret_get("GOOGLE_API_KEY")
 DEFAULT_MODEL = secret_get("GEMINI_MODEL", "gemini-2.0-flash-exp")
 DEFAULT_TEMPERATURE = float(secret_get("GEMINI_TEMPERATURE", "0.7"))
-ABACUS_API_KEY = secret_get("ABACUS_API_KEY")
-ABACUS_MODEL = secret_get("ABACUS_MODEL", "gemini-2.0-flash-exp")
-ABACUS_URL = "https://routellm.abacus.ai/v1/chat/completions"
 
 # OBS: Passaremos a listar todo o Drive, sem filtrar por pasta específica
 DRIVE_FOLDER_ID = None
@@ -711,45 +706,102 @@ def process_special_commands(prompt: str) -> tuple[bool, str]:
     
     return False, ""
 
-def call_abacus_streaming(messages: List[Dict[str, str]]):
-    """Chama a API Abacus.ai com streaming"""
-    headers = {
-        "Authorization": f"Bearer {ABACUS_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    
-    payload = {
-        "model": ABACUS_MODEL,
-        "messages": messages,
-        "temperature": DEFAULT_TEMPERATURE,
-        "stream": True,
-    }
-    
+def call_gemini_streaming(messages: List[Dict[str, str]]):
+    """Chama a API Gemini (Google Generative AI). Implementa fallback para streaming ou retorno único."""
+    # Tenta configurar a lib com API key (se fornecida)
     try:
-        response = requests.post(ABACUS_URL, headers=headers, json=payload, stream=True, timeout=60)
-        response.raise_for_status()
-        
-        for line in response.iter_lines():
-            if not line:
-                continue
-            
-            line = line.decode("utf-8")
-            if line.startswith("data: "):
-                data_str = line[6:]
-                if data_str.strip() == "[DONE]":
-                    break
-                
-                try:
-                    data = json.loads(data_str)
-                    delta = data.get("choices", [{}])[0].get("delta", {})
-                    content = delta.get("content", "")
+        if API_KEY:
+            try:
+                genai.configure(api_key=API_KEY)
+            except Exception:
+                # algumas versões podem não expor configure — ignore se falhar
+                pass
+    except Exception:
+        pass
+
+    # Se não houver config alguma, tenta alertar
+    if not API_KEY and not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+        yield "\n\n**Erro:** Gemini não está configurado. Defina GEMINI_API_KEY ou credenciais de serviço Google."
+        return
+
+    try:
+        # Se a biblioteca oferecer streaming, use-a (interface pode variar entre versões)
+        try:
+            stream_fn = None
+            if hasattr(genai, "chat") and hasattr(genai.chat, "completions") and hasattr(genai.chat.completions, "stream"):
+                stream_fn = genai.chat.completions.stream
+            elif hasattr(genai, "chat") and hasattr(genai.chat, "stream"):
+                stream_fn = genai.chat.stream
+
+            if stream_fn:
+                for resp in stream_fn(model=DEFAULT_MODEL, messages=messages, temperature=DEFAULT_TEMPERATURE):
+                    # resp pode ser dict ou objeto; tente extrair delta/content
+                    content = ""
+                    try:
+                        if isinstance(resp, dict):
+                            delta = resp.get("delta", {}) or resp.get("message", {})
+                            if isinstance(delta, dict):
+                                content = delta.get("content", "") or delta.get("text", "")
+                        else:
+                            # objeto com atributos
+                            delta = getattr(resp, "delta", None) or getattr(resp, "message", None)
+                            if delta:
+                                content = getattr(delta, "content", "") or getattr(delta, "text", "")
+                    except Exception:
+                        content = ""
+
                     if content:
                         yield content
-                except json.JSONDecodeError:
-                    continue
-    
-    except requests.exceptions.RequestException as e:
-        yield f"\n\n**Erro na API:** {str(e)}"
+                return
+        except Exception:
+            # se streaming falhar, segue para fallback síncrono
+            pass
+
+        # Fallback síncrono: cria a conclusão e retorna o texto completo
+        response = None
+        if hasattr(genai, "chat") and hasattr(genai.chat, "completions") and hasattr(genai.chat.completions, "create"):
+            response = genai.chat.completions.create(model=DEFAULT_MODEL, messages=messages, temperature=DEFAULT_TEMPERATURE)
+        elif hasattr(genai, "chat") and hasattr(genai.chat, "create"):
+            response = genai.chat.create(model=DEFAULT_MODEL, messages=messages, temperature=DEFAULT_TEMPERATURE)
+        else:
+            yield "\n\n**Erro:** Cliente Gemini não possui método de criação esperado."
+            return
+
+        # Tenta extrair o conteúdo da resposta
+        content = ""
+        try:
+            if isinstance(response, dict):
+                choices = response.get("choices", [])
+                if choices:
+                    first = choices[0]
+                    if isinstance(first, dict):
+                        message = first.get("message") or first.get("delta") or first
+                        if isinstance(message, dict):
+                            content = message.get("content", "") or message.get("text", "")
+                        else:
+                            content = str(message)
+            else:
+                # objetos retornados por algumas versões
+                if hasattr(response, "candidates"):
+                    candidates = getattr(response, "candidates")
+                    if candidates:
+                        first = candidates[0]
+                        content = getattr(first, "content", "") or (first.get("content") if isinstance(first, dict) else "")
+                elif hasattr(response, "choices"):
+                    choices = getattr(response, "choices")
+                    if choices:
+                        first = choices[0]
+                        message = getattr(first, "message", None) or first
+                        content = getattr(message, "content", "") or (message.get("content") if isinstance(message, dict) else "")
+        except Exception:
+            content = str(response)
+
+        if content:
+            yield content
+        else:
+            yield "\n\n**Erro:** resposta vazia da API Gemini."
+    except Exception as e:
+        yield f"\n\n**Erro na API Gemini:** {e}"
 
 # --------- Interface ---------
 
@@ -937,13 +989,13 @@ Seja objetivo, profissional e forneça respostas em português brasileiro."""
         for h in st.session_state.history[-10:]:  # Últimas 10 mensagens
             messages.append({"role": h["role"], "content": h["content"]})
         
-        # Chama a API com streaming
+        # Chama a API com streaming (agora usando Gemini)
         with st.spinner("Pensando..."):
             response_placeholder = st.empty()
             full_response = ""
             
             try:
-                for chunk in call_abacus_streaming(messages):
+                for chunk in call_gemini_streaming(messages):
                     full_response += chunk
                     response_placeholder.markdown(f'''
                         <div class="assistant-bubble">
@@ -968,10 +1020,3 @@ st.markdown("""
         </div>
     </div>
 """, unsafe_allow_html=True)
-
-
-
-
-
-
-
