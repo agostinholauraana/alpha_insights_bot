@@ -1,50 +1,32 @@
 import os
-import time
 from typing import List, Dict, Any
 import json
-from datetime import datetime
 
 import streamlit as st
 from dotenv import load_dotenv
-import google.generativeai as genai
-import requests
-
-import json, os, streamlit as st
-import streamlit as st
-
-service_account_json = st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"]
-os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = json.dumps(json.loads(service_account_json))
-
-# Carrega credenciais do Streamlit Secrets
-service_account_json = st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"]
-
-# Converte para dict e coloca na variável de ambiente
-service_account_info = json.loads(service_account_json)
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = ""
-os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = json.dumps(service_account_info)
-
+from google import genai
 
 # --------- Carregar variáveis de ambiente ---------
 load_dotenv()
 
-# --------- Credenciais do Google Service Account ---------
-# Usando JSON direto do Streamlit Secrets
-try:
-    service_account_info = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"])
-    os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = json.dumps(service_account_info)
-except KeyError:
-    st.error("A chave 'GOOGLE_SERVICE_ACCOUNT_JSON' não foi encontrada em st.secrets.")
-    st.stop()
-
 # --------- Função para pegar segredos (prioriza st.secrets) ---------
 def secret_get(key: str, default: str | None = None):
-    return st.secrets.get(key, os.getenv(key, default))  # type: ignore[attr-defined]
+    try:
+        return st.secrets.get(key, os.getenv(key, default))  # type: ignore[attr-defined]
+    except Exception:
+        return os.getenv(key, default)
 
 # --------- Chaves da API ---------
 API_KEY = secret_get("GEMINI_API_KEY") or secret_get("GOOGLE_API_KEY")
 DEFAULT_MODEL = secret_get("GEMINI_MODEL", "gemini-2.0-flash-exp")
 DEFAULT_TEMPERATURE = float(secret_get("GEMINI_TEMPERATURE", "0.7"))
-GOOGLE_DRIVE_FOLDER_ID = secret_get("GOOGLE_DRIVE_FOLDER_ID", "")
+
+# --------- Disponibiliza credenciais do Google para google_service.py ---------
+# Essas credenciais são usadas apenas pelos serviços de Google Drive/Sheets.
+for _k in ("GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_SERVICE_ACCOUNT_FILE"):
+    _v = secret_get(_k)
+    if _v:
+        os.environ[_k] = str(_v)
 
 # --------- Importa serviço do Google Sheets ---------
 from google_service import (
@@ -53,28 +35,6 @@ from google_service import (
     get_spreadsheet_info,
     convert_excel_to_google_sheet
 )
-
-# --------- Carregar variáveis de ambiente ---------
-load_dotenv()
-
-# Carrega segredos (prioriza st.secrets quando disponível)
-def secret_get(key: str, default: str | None = None):
-    try:
-        return st.secrets.get(key, os.getenv(key, default))  # type: ignore[attr-defined]
-    except Exception:
-        return os.getenv(key, default)
-
-# Disponibiliza credenciais do Google via env para google_service.py
-for _k in ("GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_SERVICE_ACCOUNT_FILE"):
-    try:
-        if _k in st.secrets:  # type: ignore[attr-defined]
-            os.environ[_k] = str(st.secrets[_k])  # type: ignore[index]
-    except Exception:
-        pass
-
-API_KEY = secret_get("GEMINI_API_KEY") or secret_get("GOOGLE_API_KEY")
-DEFAULT_MODEL = secret_get("GEMINI_MODEL", "gemini-2.0-flash-exp")
-DEFAULT_TEMPERATURE = float(secret_get("GEMINI_TEMPERATURE", "0.7"))
 
 # OBS: Passaremos a listar todo o Drive, sem filtrar por pasta específica
 DRIVE_FOLDER_ID = None
@@ -580,7 +540,7 @@ if st.session_state.theme == 'dark':
         }
         .stApp { background: #0F172A; }
         [data-testid="stSidebar"] { background: #1F2937 !important; border-right-color: #374151; }
-        .assistant-bubble { background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.25); color: #F9FAFB; }
+        .assistant-bubble { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.25); color: #F9FAFB; }
         .user-bubble { background: rgba(31,41,55,0.8); border-color: #374151; color: #F9FAFB; }
         .stChatInputContainer { background: rgba(31,41,55,0.7); border-color: rgba(59,130,246,0.3); }
         .stButton > button { background: rgba(31,41,55,0.9); border-color: #374151; color: #D1D5DB; }
@@ -707,99 +667,67 @@ def process_special_commands(prompt: str) -> tuple[bool, str]:
     return False, ""
 
 def call_gemini_streaming(messages: List[Dict[str, str]]):
-    """Chama a API Gemini (Google Generative AI). Implementa fallback para streaming ou retorno único."""
-    # Tenta configurar a lib com API key (se fornecida)
-    try:
-        if API_KEY:
-            try:
-                genai.configure(api_key=API_KEY)
-            except Exception:
-                # algumas versões podem não expor configure — ignore se falhar
-                pass
-    except Exception:
-        pass
-
-    # Se não houver config alguma, tenta alertar
-    if not API_KEY and not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-        yield "\n\n**Erro:** Gemini não está configurado. Defina GEMINI_API_KEY ou credenciais de serviço Google."
+    """
+    Chama a API Gemini usando o SDK oficial google-genai com streaming.
+    Converte o histórico de mensagens (user/assistant) para o formato role/parts.
+    Injeta system_instruction com o contexto do Google Drive/Sheets.
+    """
+    # 1) Configurar API Key
+    if not API_KEY:
+        yield "\n\n**Erro:** Gemini não está configurado. Defina GEMINI_API_KEY ou GOOGLE_API_KEY."
         return
 
     try:
-        # Se a biblioteca oferecer streaming, use-a (interface pode variar entre versões)
-        try:
-            stream_fn = None
-            if hasattr(genai, "chat") and hasattr(genai.chat, "completions") and hasattr(genai.chat.completions, "stream"):
-                stream_fn = genai.chat.completions.stream
-            elif hasattr(genai, "chat") and hasattr(genai.chat, "stream"):
-                stream_fn = genai.chat.stream
+        genai.configure(api_key=API_KEY)
+        client = genai.Client()
 
-            if stream_fn:
-                for resp in stream_fn(model=DEFAULT_MODEL, messages=messages, temperature=DEFAULT_TEMPERATURE):
-                    # resp pode ser dict ou objeto; tente extrair delta/content
-                    content = ""
-                    try:
-                        if isinstance(resp, dict):
-                            delta = resp.get("delta", {}) or resp.get("message", {})
-                            if isinstance(delta, dict):
-                                content = delta.get("content", "") or delta.get("text", "")
-                        else:
-                            # objeto com atributos
-                            delta = getattr(resp, "delta", None) or getattr(resp, "message", None)
-                            if delta:
-                                content = getattr(delta, "content", "") or getattr(delta, "text", "")
-                    except Exception:
-                        content = ""
+        # 2) Obter contexto do Google Sheets (para system instruction)
+        google_sheets_context = get_google_sheets_context() or ""
 
-                    if content:
-                        yield content
-                return
-        except Exception:
-            # se streaming falhar, segue para fallback síncrono
-            pass
+        system_instruction = (
+            "Você é o Alphy, um Assistente de Análise de Dados prestativo, objetivo e conciso. "
+            "Você tem acesso aos metadados das planilhas disponíveis no Google Drive/Sheets listadas abaixo para responder a consultas, "
+            "gerar insights e preparar relatórios quando solicitado. "
+            "Somente mencione planilhas/IDs quando for útil para o usuário.\n\n"
+            f"Contexto do Google Drive/Sheets:\n{google_sheets_context}"
+        )
 
-        # Fallback síncrono: cria a conclusão e retorna o texto completo
-        response = None
-        if hasattr(genai, "chat") and hasattr(genai.chat, "completions") and hasattr(genai.chat.completions, "create"):
-            response = genai.chat.completions.create(model=DEFAULT_MODEL, messages=messages, temperature=DEFAULT_TEMPERATURE)
-        elif hasattr(genai, "chat") and hasattr(genai.chat, "create"):
-            response = genai.chat.create(model=DEFAULT_MODEL, messages=messages, temperature=DEFAULT_TEMPERATURE)
-        else:
-            yield "\n\n**Erro:** Cliente Gemini não possui método de criação esperado."
+        # 3) Converter histórico para o formato aceito (role in {'user','model'})
+        contents: List[Dict[str, Any]] = []
+        for msg in messages:
+            role = msg.get("role", "").lower()
+            # Ignora possíveis mensagens de sistema prévias no histórico
+            if role == "system":
+                continue
+
+            mapped_role = "user" if role == "user" else "model"
+            text = msg.get("content", "")
+            if not isinstance(text, str):
+                text = str(text)
+
+            if text.strip():
+                contents.append({"role": mapped_role, "parts": [{"text": text}]})
+
+        if not contents:
+            yield "\n\n**Erro:** Nenhuma mensagem válida para enviar ao modelo."
             return
 
-        # Tenta extrair o conteúdo da resposta
-        content = ""
-        try:
-            if isinstance(response, dict):
-                choices = response.get("choices", [])
-                if choices:
-                    first = choices[0]
-                    if isinstance(first, dict):
-                        message = first.get("message") or first.get("delta") or first
-                        if isinstance(message, dict):
-                            content = message.get("content", "") or message.get("text", "")
-                        else:
-                            content = str(message)
-            else:
-                # objetos retornados por algumas versões
-                if hasattr(response, "candidates"):
-                    candidates = getattr(response, "candidates")
-                    if candidates:
-                        first = candidates[0]
-                        content = getattr(first, "content", "") or (first.get("content") if isinstance(first, dict) else "")
-                elif hasattr(response, "choices"):
-                    choices = getattr(response, "choices")
-                    if choices:
-                        first = choices[0]
-                        message = getattr(first, "message", None) or first
-                        content = getattr(message, "content", "") or (message.get("content") if isinstance(message, dict) else "")
-        except Exception:
-            content = str(response)
+        # 4) Chamada com streaming
+        stream = client.models.generate_content_stream(
+            model=DEFAULT_MODEL,
+            contents=contents,
+            config={
+                "temperature": DEFAULT_TEMPERATURE,
+                "system_instruction": system_instruction,
+            },
+        )
 
-        if content:
-            yield content
-        else:
-            yield "\n\n**Erro:** resposta vazia da API Gemini."
+        # 5) Yield dos chunks de texto
+        for chunk in stream:
+            # Cada chunk pode conter 'text' incremental
+            if hasattr(chunk, "text") and chunk.text:
+                yield chunk.text
+
     except Exception as e:
         yield f"\n\n**Erro na API Gemini:** {e}"
 
@@ -966,30 +894,13 @@ if prompt:
         ''', unsafe_allow_html=True)
         st.rerun()
     else:
-        # Prepara contexto com dados das planilhas
-        sheets_context = get_google_sheets_context()
-        
-        system_message = {
-            "role": "system",
-            "content": f"""Você é Alphy, o assistente de análise de dados da Alpha Insights. Identifique-se como Alphy nas respostas quando fizer sentido.
-
-{sheets_context}
-
-Você tem acesso às planilhas acima e pode ajudar o usuário a:
-- Analisar dados
-- Responder perguntas sobre as planilhas
-- Gerar insights e relatórios
-- Processar informações de planilhas
-
-Seja objetivo, profissional e forneça respostas em português brasileiro."""
-        }
-        
-        # Monta histórico de mensagens
-        messages = [system_message]
+        # Monta histórico de mensagens (apenas user/assistant; system instruction será injetada na chamada)
+        messages: List[Dict[str, str]] = []
         for h in st.session_state.history[-10:]:  # Últimas 10 mensagens
-            messages.append({"role": h["role"], "content": h["content"]})
+            if h["role"] in ("user", "assistant"):
+                messages.append({"role": h["role"], "content": h["content"]})
         
-        # Chama a API com streaming (agora usando Gemini)
+        # Chama a API com streaming (google-genai)
         with st.spinner("Pensando..."):
             response_placeholder = st.empty()
             full_response = ""
