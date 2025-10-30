@@ -5,8 +5,8 @@ import json
 
 import streamlit as st
 from dotenv import load_dotenv
-from google import genai # Importação de 'genai'
-
+# Linha CORRIGIDA (usa o nome do módulo instalado):
+from google import generativeai as genai
 # --------- Carregar variáveis de ambiente ---------
 load_dotenv()
 
@@ -932,4 +932,5 @@ st.markdown("""
         </div>
     </div>
 """, unsafe_allow_html=True)
+
 
