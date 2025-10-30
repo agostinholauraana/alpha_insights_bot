@@ -2,7 +2,8 @@
 
 # --------- Módulos Padrão do Python ---------
 import os
-import json
+# AGORA NECESSÁRIO para limpar a string JSON do Service Account
+import json 
 from typing import List, Dict, Any
 
 # --------- Módulos de Terceiros ---------
@@ -10,14 +11,10 @@ import streamlit as st
 from dotenv import load_dotenv
 
 # Importações CORRETAS para o SDK google-generativeai
-# Agora, importa o módulo principal com um alias padrão para maior compatibilidade.
+# Usa o módulo principal com um alias padrão para maior compatibilidade.
 import google.generativeai as genai
 
-# As importações específicas 'configure' e 'Client' (com alias) foram removidas
-# para evitar o ImportError. Serão acessadas via 'genai.configure' e 'genai.Client'.
-
-# --------- Carregar variáveis de ambiente ---------
-load_dotenv()
+# ... (restante das funções e configurações de chave) ...
 
 # --------- Função para pegar segredos (prioriza st.secrets) ---------
 def secret_get(key: str, default: str | None = None):
@@ -33,11 +30,28 @@ DEFAULT_MODEL = secret_get("GEMINI_MODEL", "gemini-2.0-flash-exp")
 DEFAULT_TEMPERATURE = float(secret_get("GEMINI_TEMPERATURE", "0.7"))
 
 # --------- Disponibiliza credenciais do Google para google_service.py ---------
-# Essas credenciais são usadas apenas pelos serviços de Google Drive/Sheets.
-for _k in ("GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_SERVICE_ACCOUNT_FILE"):
-    _v = secret_get(_k)
-    if _v:
-        os.environ[_k] = str(_v)
+# ALTERAÇÃO CRÍTICA: Limpar o JSON da Conta de Serviço (para corrigir o erro JWT)
+raw_service_account_json = secret_get("GOOGLE_SERVICE_ACCOUNT_JSON")
+
+if raw_service_account_json:
+    try:
+        # 1. Tenta carregar o JSON (removendo whitespace/newlines externos)
+        sa_info = json.loads(raw_service_account_json.strip())
+        
+        # 2. O Google Auth precisa de uma string JSON limpa, sem novos caracteres de quebra de linha
+        # O json.dumps() garante que a string final seja limpa e formatada corretamente.
+        os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = json.dumps(sa_info)
+        
+    except json.JSONDecodeError as e:
+        # Se falhar ao decodificar (ex: formato de chave muito corrompido), 
+        # voltamos à string bruta (o que geralmente causa o erro JWT)
+        print(f"ERRO: Falha ao decodificar JSON do Service Account: {e}. Usando string bruta.")
+        os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = raw_service_account_json
+        
+# Garante que o arquivo path também é configurado se presente (embora não seja o principal)
+file_path_secret = secret_get("GOOGLE_SERVICE_ACCOUNT_FILE")
+if file_path_secret:
+    os.environ["GOOGLE_SERVICE_ACCOUNT_FILE"] = str(file_path_secret) 
 
 # --------- Importa serviço do Google Sheets ---------
 # Note: Este módulo 'google_service' deve existir na raiz do seu projeto.
@@ -47,6 +61,7 @@ from google_service import (
     get_spreadsheet_info,
     convert_excel_to_google_sheet
 )
+# ... (restante do código permanece igual)
 
 # OBS: Passaremos a listar todo o Drive, sem filtrar por pasta específica
 DRIVE_FOLDER_ID = None
@@ -681,6 +696,7 @@ def process_special_commands(prompt: str) -> tuple[bool, str]:
 def call_gemini_streaming(messages: List[Dict[str, str]]):
     """
     Chama a API Gemini usando o SDK oficial google-generativeai com streaming.
+    Compatível com versões estáveis (sem uso de genai.Client).
     Converte o histórico de mensagens (user/assistant) para o formato role/parts.
     Injeta system_instruction com o contexto do Google Drive/Sheets.
     """
@@ -690,9 +706,7 @@ def call_gemini_streaming(messages: List[Dict[str, str]]):
         return
 
     try:
-        # CORREÇÃO CRÍTICA: Usando 'genai.configure' e 'genai.Client()' do módulo importado
         genai.configure(api_key=API_KEY)
-        client = genai.Client() 
 
         # 2) Obter contexto do Google Sheets (para system instruction)
         google_sheets_context = get_google_sheets_context() or ""
@@ -709,7 +723,6 @@ def call_gemini_streaming(messages: List[Dict[str, str]]):
         contents: List[Dict[str, Any]] = []
         for msg in messages:
             role = msg.get("role", "").lower()
-            # Ignora possíveis mensagens de sistema prévias no histórico
             if role == "system":
                 continue
 
@@ -719,30 +732,32 @@ def call_gemini_streaming(messages: List[Dict[str, str]]):
                 text = str(text)
 
             if text.strip():
-                contents.append({"role": mapped_role, "parts": [{"text": text}]})
+                contents.append({"role": mapped_role, "parts": [text]})
 
         if not contents:
             yield "\n\n**Erro:** Nenhuma mensagem válida para enviar ao modelo."
             return
 
-        # 4) Chamada com streaming
-        stream = client.models.generate_content_stream(
-            model=DEFAULT_MODEL,
-            contents=contents,
-            config={
+        # 4) Criar modelo e iniciar streaming
+        model = genai.GenerativeModel(
+            model_name=DEFAULT_MODEL,
+            system_instruction=system_instruction,
+        )
+
+        stream = model.generate_content(
+            contents,
+            stream=True,
+            generation_config={
                 "temperature": DEFAULT_TEMPERATURE,
-                "system_instruction": system_instruction,
             },
         )
 
         # 5) Yield dos chunks de texto
         for chunk in stream:
-            # Cada chunk pode conter 'text' incremental
             if hasattr(chunk, "text") and chunk.text:
                 yield chunk.text
 
     except Exception as e:
-        # Erro de atributo (como 'Client' não encontrado) será capturado aqui
         yield f"\n\n**Erro na API Gemini:** {e}"
 
 # --------- Interface ---------
