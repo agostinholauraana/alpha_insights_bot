@@ -10,9 +10,11 @@ import streamlit as st
 from dotenv import load_dotenv
 
 # Importações CORRETAS para o SDK google-generativeai
-# Importa 'configure' e a classe 'Client' (com alias para clareza)
-from google.generativeai import configure
-from google.generativeai.client import Client as GeminiClient
+# Agora, importa o módulo principal com um alias padrão para maior compatibilidade.
+import google.generativeai as genai
+
+# As importações específicas 'configure' e 'Client' (com alias) foram removidas
+# para evitar o ImportError. Serão acessadas via 'genai.configure' e 'genai.Client'.
 
 # --------- Carregar variáveis de ambiente ---------
 load_dotenv()
@@ -688,9 +690,9 @@ def call_gemini_streaming(messages: List[Dict[str, str]]):
         return
 
     try:
-        # CORREÇÃO: Usando 'configure' e 'GeminiClient' importados no topo do arquivo.
-        configure(api_key=API_KEY)
-        client = GeminiClient() 
+        # CORREÇÃO CRÍTICA: Usando 'genai.configure' e 'genai.Client()' do módulo importado
+        genai.configure(api_key=API_KEY)
+        client = genai.Client() 
 
         # 2) Obter contexto do Google Sheets (para system instruction)
         google_sheets_context = get_google_sheets_context() or ""
@@ -740,6 +742,7 @@ def call_gemini_streaming(messages: List[Dict[str, str]]):
                 yield chunk.text
 
     except Exception as e:
+        # Erro de atributo (como 'Client' não encontrado) será capturado aqui
         yield f"\n\n**Erro na API Gemini:** {e}"
 
 # --------- Interface ---------
