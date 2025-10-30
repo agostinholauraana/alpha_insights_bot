@@ -1,10 +1,11 @@
+# File "/mount/src/alpha_insights_bot/app.py", linha 7
 import os
 from typing import List, Dict, Any
 import json
 
 import streamlit as st
 from dotenv import load_dotenv
-from google import genai
+from google import genai # Importação de 'genai'
 
 # --------- Carregar variáveis de ambiente ---------
 load_dotenv()
@@ -931,3 +932,4 @@ st.markdown("""
         </div>
     </div>
 """, unsafe_allow_html=True)
+
