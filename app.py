@@ -1,16 +1,19 @@
-# File "/mount/src/alpha_insights_bot/app.py", linha 7
-import os
-from typing import List, Dict, Any
-import json
+# app.py (Importações e Variáveis de Ambiente)
 
+# --------- Módulos Padrão do Python ---------
+import os
+import json
+from typing import List, Dict, Any
+
+# --------- Módulos de Terceiros ---------
 import streamlit as st
 from dotenv import load_dotenv
-# app.py (No bloco de importações)
 
-# Remova: from google import generativeai as genai
-# Adicione a forma canônica de importação:
-from google import generativeai
-from google.generativeai.client import Client, configure
+# Importações CORRETAS para o SDK google-generativeai
+# Usamos aliases para evitar conflito e garantir acesso a Client e configure.
+from google.generativeai.client import Client as GeminiClient
+from google.generativeai import configure
+
 # --------- Carregar variáveis de ambiente ---------
 load_dotenv()
 
@@ -671,9 +674,9 @@ def process_special_commands(prompt: str) -> tuple[bool, str]:
     
     return False, ""
 
-def call_gemini_streaming(messages: List[Dict[str, str]]):
+def call_gemINI_streaming(messages: List[Dict[str, str]]):
     """
-    Chama a API Gemini usando o SDK oficial google-genai com streaming.
+    Chama a API Gemini usando o SDK oficial google-generativeai com streaming.
     Converte o histórico de mensagens (user/assistant) para o formato role/parts.
     Injeta system_instruction com o contexto do Google Drive/Sheets.
     """
@@ -683,9 +686,10 @@ def call_gemini_streaming(messages: List[Dict[str, str]]):
         return
 
     try:
-        genai.configure(api_key=API_KEY)
-        client = genai.Client()
-
+        # CORREÇÃO AQUI: Usando 'configure' e 'GeminiClient' importados diretamente do submódulo
+        configure(api_key=API_KEY)
+        client = GeminiClient() 
+        
         # 2) Obter contexto do Google Sheets (para system instruction)
         google_sheets_context = get_google_sheets_context() or ""
 
@@ -705,6 +709,7 @@ def call_gemini_streaming(messages: List[Dict[str, str]]):
             if role == "system":
                 continue
 
+            # O SDK Gemini usa 'model' e 'user'
             mapped_role = "user" if role == "user" else "model"
             text = msg.get("content", "")
             if not isinstance(text, str):
@@ -735,7 +740,6 @@ def call_gemini_streaming(messages: List[Dict[str, str]]):
 
     except Exception as e:
         yield f"\n\n**Erro na API Gemini:** {e}"
-
 # --------- Interface ---------
 
 # Sidebar com configurações (estilo compacto e moderno)
@@ -936,6 +940,7 @@ st.markdown("""
         </div>
     </div>
 """, unsafe_allow_html=True)
+
 
 
 
