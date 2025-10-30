@@ -1,4 +1,4 @@
-# app.py (Importações e Variáveis de Ambiente)
+# app.py (Importações)
 
 # --------- Módulos Padrão do Python ---------
 import os
@@ -10,9 +10,9 @@ import streamlit as st
 from dotenv import load_dotenv
 
 # Importações CORRETAS para o SDK google-generativeai
-# Usamos aliases para evitar conflito e garantir acesso a Client e configure.
-from google.generativeai.client import Client as GeminiClient
+# Importa 'configure' e a classe 'Client' (com alias para clareza)
 from google.generativeai import configure
+from google.generativeai.client import Client as GeminiClient
 
 # --------- Carregar variáveis de ambiente ---------
 load_dotenv()
@@ -20,7 +20,8 @@ load_dotenv()
 # --------- Função para pegar segredos (prioriza st.secrets) ---------
 def secret_get(key: str, default: str | None = None):
     try:
-        return st.secrets.get(key, os.getenv(key, default))  # type: ignore[attr-defined]
+        # Usa st.secrets no Streamlit Cloud ou os.getenv localmente
+        return st.secrets.get(key, os.getenv(key, default)) # type: ignore[attr-defined]
     except Exception:
         return os.getenv(key, default)
 
@@ -37,6 +38,7 @@ for _k in ("GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_SERVICE_ACCOUNT_FILE"):
         os.environ[_k] = str(_v)
 
 # --------- Importa serviço do Google Sheets ---------
+# Note: Este módulo 'google_service' deve existir na raiz do seu projeto.
 from google_service import (
     list_spreadsheets,
     get_form_responses,
@@ -618,8 +620,8 @@ def process_special_commands(prompt: str) -> tuple[bool, str]:
                 if mt and mt != 'application/vnd.google-apps.spreadsheet':
                     label = " [Excel]"
                 response += f"{i}. **{sheet['name']}**{label}\n"
-                response += f"   - ID: `{sheet['id']}`\n"
-                response += f"   - Modificado: {sheet.get('modifiedTime', 'N/A')}\n\n"
+                response += f"    - ID: `{sheet['id']}`\n"
+                response += f"    - Modificado: {sheet.get('modifiedTime', 'N/A')}\n\n"
             
             st.info(f"Planilhas do Google Drive carregadas - {len(sheets)} encontrada(s)")
             return True, response
@@ -674,7 +676,7 @@ def process_special_commands(prompt: str) -> tuple[bool, str]:
     
     return False, ""
 
-def call_gemINI_streaming(messages: List[Dict[str, str]]):
+def call_gemini_streaming(messages: List[Dict[str, str]]):
     """
     Chama a API Gemini usando o SDK oficial google-generativeai com streaming.
     Converte o histórico de mensagens (user/assistant) para o formato role/parts.
@@ -686,10 +688,10 @@ def call_gemINI_streaming(messages: List[Dict[str, str]]):
         return
 
     try:
-        # CORREÇÃO AQUI: Usando 'configure' e 'GeminiClient' importados diretamente do submódulo
+        # CORREÇÃO: Usando 'configure' e 'GeminiClient' importados no topo do arquivo.
         configure(api_key=API_KEY)
         client = GeminiClient() 
-        
+
         # 2) Obter contexto do Google Sheets (para system instruction)
         google_sheets_context = get_google_sheets_context() or ""
 
@@ -709,7 +711,6 @@ def call_gemINI_streaming(messages: List[Dict[str, str]]):
             if role == "system":
                 continue
 
-            # O SDK Gemini usa 'model' e 'user'
             mapped_role = "user" if role == "user" else "model"
             text = msg.get("content", "")
             if not isinstance(text, str):
@@ -740,6 +741,7 @@ def call_gemINI_streaming(messages: List[Dict[str, str]]):
 
     except Exception as e:
         yield f"\n\n**Erro na API Gemini:** {e}"
+
 # --------- Interface ---------
 
 # Sidebar com configurações (estilo compacto e moderno)
@@ -909,7 +911,7 @@ if prompt:
             if h["role"] in ("user", "assistant"):
                 messages.append({"role": h["role"], "content": h["content"]})
         
-        # Chama a API com streaming (google-genai)
+        # Chama a API com streaming (google-generativeai)
         with st.spinner("Pensando..."):
             response_placeholder = st.empty()
             full_response = ""
@@ -930,17 +932,6 @@ if prompt:
             except Exception as e:
                 error_msg = f"Erro ao processar sua mensagem: {str(e)}"
                 st.error(error_msg)
-                st.session_state.history.append({"role": "assistant", "content": error_msg})
-
-# Rodapé discreto
-st.markdown("""
-    <div style="text-align: center; padding: 2rem 0 1rem; margin-top: 2rem; border-top: 1px solid #E5E7EB;">
-        <div style="font-size: 0.7rem; color: #9CA3AF;">
-            Alpha Insights © 2025
-        </div>
-    </div>
-""", unsafe_allow_html=True)
-
-
-
-
+                st.session_state.history.append({"role": "assistant", "content": error_msg}) # Adiciona erro ao histórico, para não perder contexto
+        
+        st.rerun() # Necessário para atualizar o histórico
